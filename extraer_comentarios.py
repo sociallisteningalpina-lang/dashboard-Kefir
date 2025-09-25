@@ -6,6 +6,7 @@ import logging
 import html
 import unicodedata
 import os
+import random # <-- MODIFICACIÓN: Se importa la librería para generar números aleatorios
 
 # Configurar logging más limpio
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
@@ -119,10 +120,8 @@ class SocialMediaScraper:
 
     def _process_facebook_results(self, items, url, post_number, campaign_info):
         processed = []
-        # <-- CORRECCIÓN: Usando tu lista de campos de fecha más completa
         possible_date_fields = ['createdTime', 'timestamp', 'publishedTime', 'date', 'createdAt', 'publishedAt']
         for comment in items:
-            # <-- CORRECCIÓN: Usando tu bucle for original para máxima compatibilidad
             created_time = None
             for field in possible_date_fields:
                 if field in comment and comment[field]:
@@ -135,12 +134,10 @@ class SocialMediaScraper:
 
     def _process_instagram_results(self, items, url, post_number, campaign_info):
         processed = []
-        # <-- CORRECCIÓN: Usando tu lista de campos de fecha más completa
         possible_date_fields = ['timestamp', 'createdTime', 'publishedAt', 'date', 'createdAt', 'taken_at']
         for item in items:
             comments_list = item.get('comments', [item]) if item.get('comments') is not None else [item]
             for comment in comments_list:
-                # <-- CORRECCIÓN: Usando tu bucle for original
                 created_time = None
                 for field in possible_date_fields:
                     if field in comment and comment[field]:
@@ -165,7 +162,7 @@ def save_to_excel(df, filename):
     try:
         with pd.ExcelWriter(filename, engine='openpyxl') as writer:
             df.to_excel(writer, sheet_name='Comentarios', index=False)
-            if 'post_number' in df.columns:
+            if not df.empty and 'post_number' in df.columns:
                 summary = df.groupby(['post_number', 'platform', 'post_url']).agg(Total_Comentarios=('comment_text', 'count'), Total_Likes=('likes_count', 'sum')).reset_index()
                 summary.to_excel(writer, sheet_name='Resumen_Posts', index=False)
         logger.info(f"Excel file saved successfully: {filename}")
@@ -177,7 +174,6 @@ def save_to_excel(df, filename):
 def process_datetime_columns(df):
     if 'created_time' not in df.columns: return df
     logger.info("Processing datetime columns...")
-    # Intenta convertir todo tipo de formatos (timestamps, ISO, etc.) a un datetime unificado
     df['created_time_processed'] = pd.to_datetime(df['created_time'], errors='coerce', utc=True, unit='s')
     mask = df['created_time_processed'].isna()
     df.loc[mask, 'created_time_processed'] = pd.to_datetime(df.loc[mask, 'created_time'], errors='coerce', utc=True)
@@ -216,12 +212,18 @@ def run_extraction():
             logger.warning(f"Unknown platform for URL: {url}")
         
         all_comments.extend(comments)
+        # --- MODIFICACIÓN CLAVE ---
         if not SOLO_PRIMER_POST and post_counter < len(valid_urls):
-            logger.info("Pausing for 30 seconds between posts...")
-            time.sleep(30)
+            # Pausa aleatoria entre 1 y 2 minutos para simular comportamiento humano
+            pausa_aleatoria = random.uniform(60, 120) 
+            logger.info(f"Pausing for {pausa_aleatoria:.2f} seconds to avoid detection...")
+            time.sleep(pausa_aleatoria)
+        # --- FIN DE LA MODIFICACIÓN ---
 
     if not all_comments:
         logger.warning("No comments were extracted. Process finished.")
+        # Pequeña corrección: si no hay comentarios, no se debería intentar guardar un excel vacío
+        # y dar un error, sino terminar limpiamente.
         return
 
     logger.info("--- PROCESSING FINAL RESULTS ---")
@@ -238,5 +240,3 @@ def run_extraction():
 
 if __name__ == "__main__":
     run_extraction()
-
-
