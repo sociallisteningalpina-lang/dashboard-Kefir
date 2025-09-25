@@ -45,6 +45,7 @@ URLS_A_PROCESAR = [
     "https://www.facebook.com/?feed_demo_ad=120233418238300432&h=AQCshb4xg4w3aZQNhso",
     "https://www.facebook.com/?feed_demo_ad=120233554870910432&h=AQBbgdd3MGvw9q6WCwY",
     "https://www.facebook.com/?feed_demo_ad=120233417504070432&h=AQAQCH3Rl_lce0gF7k0",
+    "https://www.facebook.com/?feed_demo_ad=120233418145910432&h=AQCP9RxlmBjXz0LtaJA",
     
     # FACEBOOK - Posts
     "https://www.facebook.com/100064867445065/posts/pfbid02tU1gU4dpz5E4hdSJQbQfHHRWQeebhrGLvGDdRwCfEENUfiJM7LBKg2ZXL8xjh6Qdl?dco_ad_id=120233418145910432",
@@ -69,7 +70,14 @@ URLS_A_PROCESAR = [
     "https://www.tiktok.com/@alpinacol/video/7541457975207136530?_r=1&_t=ZS-8zoRifAKgbK",
     "https://www.tiktok.com/@alpinacol/video/7547743186593008916?_r=1&_t=ZS-8zoReoFAugR",
     "https://www.tiktok.com/@alpinacol/video/7548118828790664456?_r=1&_t=ZS-8zoRa8RYbDu",
-    "https://www.tiktok.com/@alpinacol/video/7547746657144720660?_r=1&_t=ZS-8zoRVpEExWM"
+    "https://www.tiktok.com/@alpinacol/video/7547746657144720660?_r=1&_t=ZS-8zoRVpEExWM",
+    # NUEVOS 24/09/2025
+    "https://www.tiktok.com/@Alpina/video/7548130480986639632?_r=1&_t=ZS-900eQOfqR8y",
+    "https://www.tiktok.com/@Alpina/video/7548129116541685009?_r=1&_t=ZS-900eP8KESlm",
+    "https://www.tiktok.com/@Alpina/video/7548117942119042322?_r=1&_t=ZS-900eGcSaFj5",
+    "https://www.tiktok.com/@user360907502/video/7542610432733859080?_r=1&_t=ZS-900eDVc8Hkg",
+    "https://www.tiktok.com/@Alpina/video/7548130532375186696?_r=1&_t=ZS-900eA9845DE",
+    "https://www.tiktok.com/@Alpina/video/7548130486535589136?_r=1&_t=ZS-900e6AOgLwt"
 ]
 
 # INFORMACIÓN DE CAMPAÑA
@@ -290,6 +298,7 @@ def run_extraction():
 
 if __name__ == "__main__":
     run_extraction()
+
 
 
 
