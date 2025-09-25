@@ -21,14 +21,27 @@ def run_report_generation():
     # --- Limpieza y preparación de datos ---
     df['created_time_processed'] = pd.to_datetime(df['created_time_processed'])
     df['created_time_colombia'] = df['created_time_processed'] - pd.Timedelta(hours=5)
-    df.dropna(subset=['created_time_colombia', 'comment_text', 'post_url'], inplace=True)
-    df.reset_index(drop=True, inplace=True)
 
-    # --- Lógica de listado de pautas ---
-    unique_posts = df[['post_url', 'platform']].drop_duplicates()
-    comment_counts = df.groupby('post_url').size().reset_index(name='comment_count')
+    ### MODIFICACIÓN 1 INICIA AQUÍ: LÓGICA PARA INCLUIR PAUTAS CON 0 COMENTARIOS ###
     
-    unique_posts = pd.merge(unique_posts, comment_counts, on='post_url', how='left').fillna(0)
+    # --- Lógica de listado de pautas (CORREGIDA) ---
+    # 1. Obtenemos TODAS las pautas únicas ANTES de eliminar filas sin comentarios.
+    all_unique_posts = df[['post_url', 'platform']].drop_duplicates().copy()
+    all_unique_posts.dropna(subset=['post_url'], inplace=True)
+
+    # 2. Ahora sí, creamos un DataFrame solo con los comentarios válidos para el análisis.
+    df_comments = df.dropna(subset=['created_time_colombia', 'comment_text', 'post_url']).copy()
+    df_comments.reset_index(drop=True, inplace=True)
+
+    # 3. Contamos los comentarios desde el DataFrame que solo tiene comentarios.
+    comment_counts = df_comments.groupby('post_url').size().reset_index(name='comment_count')
+
+    # 4. Unimos la lista maestra de pautas con los conteos.
+    #    Usamos 'left' para mantener todas las pautas, incluso las que no tienen conteo.
+    unique_posts = pd.merge(all_unique_posts, comment_counts, on='post_url', how='left')
+    
+    # 5. Rellenamos los NaN (pautas sin comentarios) con 0.
+    unique_posts['comment_count'].fillna(0, inplace=True)
     unique_posts['comment_count'] = unique_posts['comment_count'].astype(int)
     
     unique_posts.sort_values(by='comment_count', ascending=False, inplace=True)
@@ -38,66 +51,54 @@ def run_report_generation():
     for index, row in unique_posts.iterrows():
         post_labels[row['post_url']] = f"Pauta {index + 1} ({row['platform']})"
     
-    df['post_label'] = df['post_url'].map(post_labels)
+    # Aplicamos las etiquetas a nuestra lista completa de pautas y al DF de comentarios
     unique_posts['post_label'] = unique_posts['post_url'].map(post_labels)
+    df_comments['post_label'] = df_comments['post_url'].map(post_labels)
     
     all_posts_json = json.dumps(unique_posts.to_dict('records'))
 
     print("Analizando sentimientos y temas...")
     sentiment_analyzer = create_analyzer(task="sentiment", lang="es")
-    df['sentimiento'] = df['comment_text'].apply(lambda text: {"POS": "Positivo", "NEG": "Negativo", "NEU": "Neutro"}.get(sentiment_analyzer.predict(str(text)).output, "Neutro"))
     
-    # <<<--- FUNCIÓN DE CLASIFICACIÓN ACTUALIZADA ---<<<
+    # Realizamos los análisis sobre el DataFrame que solo contiene comentarios (df_comments)
+    df_comments['sentimiento'] = df_comments['comment_text'].apply(lambda text: {"POS": "Positivo", "NEG": "Negativo", "NEU": "Neutro"}.get(sentiment_analyzer.predict(str(text)).output, "Neutro"))
+    
+    # <<<--- FUNCIÓN DE CLASIFICACIÓN (sin cambios) ---<<<
     def classify_topic(comment):
-        """
-        Clasifica un comentario en una categoría específica basada en palabras clave.
-        Esta versión está optimizada para feedback de un producto como el Kéfir.
-        """
         comment_lower = str(comment).lower()
-
-        # 1. Preguntas sobre el Producto
         if re.search(r'\bprecio\b|\bcu[aá]nto vale\b|d[oó]nde|c[oó]mo consigo|duda|pregunta|comprar|tiendas|disponible|sirve para|c[oó]mo se toma|tiene az[uú]car|valor', comment_lower):
             return 'Preguntas sobre el Producto'
-
-        # 2. Comparación con Kéfir Casero/Artesanal
         if re.search(r'b[úu]lgaros|n[oó]dulos|en casa|casero|artesanal|preparo yo|vendo el cultivo|hecho por mi', comment_lower):
             return 'Comparación con Kéfir Casero/Artesanal'
-
-        # 3. Ingredientes y Salud
         if re.search(r'aditivos|almid[oó]n|preservantes|lactosa|microbiota|flora intestinal|saludable|bacterias|vivas|gastritis|colon|helicobacter|az[uú]car añadid[oa]s', comment_lower):
             return 'Ingredientes y Salud'
-            
-        # 4. Competencia y Disponibilidad
         if re.search(r'pasco|\b[eé]xito\b|\bara\b|ol[ií]mpica|d1|copia de|no lo venden|no llega|no lo encuentro|no hay en', comment_lower):
             return 'Competencia y Disponibilidad'
-
-        # 5. Opinión General del Producto
         if re.search(r'rico|bueno|excelente|gusta|mejor|delicioso|espectacular|encanta|s[úu]per|feo|horrible|mal[ií]simo|sabe a', comment_lower):
             return 'Opinión General del Producto'
-
-        # 6. Fuera de Tema / No Relevante
         if re.search(r'am[eé]n|jajaja|receta|gracias|bendiciones', comment_lower) or len(comment_lower.split()) < 3:
             return 'Fuera de Tema / No Relevante'
-
-        return 'Otros' # Categoría por defecto si algo se escapa
+        return 'Otros'
     
-    df['tema'] = df['comment_text'].apply(classify_topic)
+    df_comments['tema'] = df_comments['comment_text'].apply(classify_topic)
     print("Análisis completado.")
 
-    df_for_json = df[['created_time_colombia', 'comment_text', 'sentimiento', 'tema', 'platform', 'post_url', 'post_label']].copy()
+    # Creamos el JSON para el dashboard desde df_comments
+    df_for_json = df_comments[['created_time_colombia', 'comment_text', 'sentimiento', 'tema', 'platform', 'post_url', 'post_label']].copy()
     df_for_json.rename(columns={'created_time_colombia': 'date', 'comment_text': 'comment', 'sentimiento': 'sentiment', 'tema': 'topic'}, inplace=True)
     df_for_json['date'] = df_for_json['date'].dt.strftime('%Y-%m-%dT%H:%M:%S')
     all_data_json = json.dumps(df_for_json.to_dict('records'))
 
-    min_date = df['created_time_colombia'].min().strftime('%Y-%m-%d')
-    max_date = df['created_time_colombia'].max().strftime('%Y-%m-%d')
+    # Las fechas min/max se calculan desde df_comments para evitar errores si no hay comentarios
+    min_date = df_comments['created_time_colombia'].min().strftime('%Y-%m-%d') if not df_comments.empty else ''
+    max_date = df_comments['created_time_colombia'].max().strftime('%Y-%m-%d') if not df_comments.empty else ''
+    
+    ### MODIFICACIÓN 1 TERMINA AQUÍ ###
     
     post_filter_options = '<option value="Todas">Ver Todas las Pautas</option>'
     for url, label in post_labels.items():
         post_filter_options += f'<option value="{url}">{label}</option>'
 
-    # El contenido HTML y JavaScript permanece igual, ya que está diseñado para ser dinámico
-    # y se adaptará automáticamente a los nuevos nombres de temas.
     html_content = f"""
     <!DOCTYPE html>
     <html lang="es">
@@ -127,9 +128,12 @@ def run_report_generation():
             .pagination-controls span {{ margin: 0 10px; font-weight: bold; vertical-align: middle; }}
             .stats-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; padding: 20px; }}
             .stat-card {{ padding: 20px; text-align: center; border-left: 5px solid; }}
-            .stat-card.total {{ border-left-color: #007bff; }} .stat-card.positive {{ border-left-color: #28a745; }} .stat-card.negative {{ border-left-color: #dc3545; }} .stat-card.neutral {{ border-left-color: #ffc107; }}
+            
+            /* ### MODIFICACIÓN 2: AÑADIR ESTILOS PARA LA NUEVA TARJETA ### */
+            .stat-card.total {{ border-left-color: #007bff; }} .stat-card.positive {{ border-left-color: #28a745; }} .stat-card.negative {{ border-left-color: #dc3545; }} .stat-card.neutral {{ border-left-color: #ffc107; }} .stat-card.pautas {{ border-left-color: #6f42c1; }}
             .stat-number {{ font-size: 2.5em; font-weight: bold; margin-bottom: 5px; }}
-            .positive-text {{ color: #28a745; }} .negative-text {{ color: #dc3545; }} .neutral-text {{ color: #ffc107; }} .total-text {{ color: #007bff; }}
+            .positive-text {{ color: #28a745; }} .negative-text {{ color: #dc3545; }} .neutral-text {{ color: #ffc107; }} .total-text {{ color: #007bff; }} .pautas-text {{ color: #6f42c1; }}
+
             .charts-section, .comments-section {{ padding: 20px; }}
             .section-title {{ font-size: 1.5em; margin-bottom: 20px; text-align: center; color: #333; }}
             .charts-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 20px; }}
@@ -242,19 +246,54 @@ def run_report_generation():
                     const selectedPlatform = platformFilter.value;
                     const selectedPost = postFilter.value;
                     
+                    // ### MODIFICACIÓN 2: LÓGICA PARA CALCULAR PAUTAS A MOSTRAR ###
                     let filteredData = allData.filter(d => d.date >= startFilter && d.date <= endFilter);
+                    let postsToShow = allPostsData; 
+
                     if (selectedPost !== 'Todas') {{
                         filteredData = filteredData.filter(d => d.post_url === selectedPost);
+                        postsToShow = allPostsData.filter(p => p.post_url === selectedPost);
                     }} else if (selectedPlatform !== 'Todas') {{
                         filteredData = filteredData.filter(d => d.platform === selectedPlatform);
+                        postsToShow = allPostsData.filter(p => p.platform === selectedPlatform);
                     }}
                     
-                    updateStats(filteredData);
+                    updateStats(filteredData, postsToShow.length);
                     updateCharts(allPostsData, filteredData);
                     updateCommentsList(filteredData);
                 }};
                 
-                const updateStats = (data) => {{ const total = data.length; const sentiments = data.reduce((acc, curr) => {{ acc[curr.sentiment] = (acc[curr.sentiment] || 0) + 1; return acc; }}, {{}}); const pos = sentiments['Positivo'] || 0; const neg = sentiments['Negativo'] || 0; const neu = sentiments['Neutro'] || 0; document.getElementById('stats-grid').innerHTML = `<div class="stat-card total"><div class="stat-number total-text">${{total}}</div><div>Total Comentarios</div></div><div class="stat-card positive"><div class="stat-number positive-text">${{pos}}</div><div>Positivos (${{(total > 0 ? (pos / total * 100) : 0).toFixed(1)}}%)</div></div><div class="stat-card negative"><div class="stat-number negative-text">${{neg}}</div><div>Negativos (${{(total > 0 ? (neg / total * 100) : 0).toFixed(1)}}%)</div></div><div class="stat-card neutral"><div class="stat-number neutral-text">${{neu}}</div><div>Neutros (${{(total > 0 ? (neu / total * 100) : 0).toFixed(1)}}%)</div></div>`; }};
+                // ### MODIFICACIÓN 2: FUNCIÓN updateStats ACTUALIZADA ###
+                const updateStats = (data, totalPosts) => {{
+                    const total = data.length;
+                    const sentiments = data.reduce((acc, curr) => {{ acc[curr.sentiment] = (acc[curr.sentiment] || 0) + 1; return acc; }}, {{}});
+                    const pos = sentiments['Positivo'] || 0;
+                    const neg = sentiments['Negativo'] || 0;
+                    const neu = sentiments['Neutro'] || 0;
+                    
+                    document.getElementById('stats-grid').innerHTML = `
+                        <div class="stat-card pautas">
+                            <div class="stat-number pautas-text">${{totalPosts}}</div>
+                            <div>Total Pautas</div>
+                        </div>
+                        <div class="stat-card total">
+                            <div class="stat-number total-text">${{total}}</div>
+                            <div>Total Comentarios</div>
+                        </div>
+                        <div class="stat-card positive">
+                            <div class="stat-number positive-text">${{pos}}</div>
+                            <div>Positivos (${{(total > 0 ? (pos / total * 100) : 0).toFixed(1)}}%)</div>
+                        </div>
+                        <div class="stat-card negative">
+                            <div class="stat-number negative-text">${{neg}}</div>
+                            <div>Negativos (${{(total > 0 ? (neg / total * 100) : 0).toFixed(1)}}%)</div>
+                        </div>
+                        <div class="stat-card neutral">
+                            <div class="stat-number neutral-text">${{neu}}</div>
+                            <div>Neutros (${{(total > 0 ? (neu / total * 100) : 0).toFixed(1)}}%)</div>
+                        </div>
+                    `;
+                }};
                 
                 const updateCommentsList = (data) => {{
                     const dataToShow = (commentsSentimentFilter === 'Todos') ? data : data.filter(d => d.sentiment === commentsSentimentFilter);
